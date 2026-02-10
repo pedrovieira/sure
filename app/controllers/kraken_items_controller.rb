@@ -220,9 +220,9 @@ class KrakenItemsController < ApplicationController
   end
 
   def complete_account_setup
-    account_configs = params[:accounts] || {}
+    selected_accounts = Array(params[:selected_accounts]).reject(&:blank?)
 
-    if account_configs.empty?
+    if selected_accounts.empty?
       redirect_to setup_accounts_kraken_item_path(@kraken_item), alert: t(".no_accounts")
       return
     end
@@ -230,20 +230,29 @@ class KrakenItemsController < ApplicationController
     created_count = 0
     skipped_count = 0
 
-    account_configs.each do |kraken_account_id, config|
-      next if config[:account_type] == "skip"
-
+    selected_accounts.each do |kraken_account_id|
       kraken_account = @kraken_item.kraken_accounts.find_by(id: kraken_account_id)
       next unless kraken_account
       next if kraken_account.account_provider.present?
 
-      accountable_type = infer_accountable_type(config[:account_type], config[:subtype])
-      account = create_account_from_kraken(kraken_account, accountable_type, config)
+      # Create account as Crypto (Kraken accounts are always crypto exchange accounts)
+      account = Current.family.accounts.create!(
+        name: kraken_account.name,
+        balance: kraken_account.current_balance || 0,
+        currency: kraken_account.currency || "USD",
+        accountable: Crypto.new
+      )
 
-      if account&.persisted?
+      if account.persisted?
         kraken_account.ensure_account_provider!(account)
-        kraken_account.update!(sync_start_date: config[:sync_start_date]) if config[:sync_start_date].present?
         created_count += 1
+
+        # Process holdings immediately so user sees them right away
+        begin
+          KrakenAccount::HoldingsProcessor.new(kraken_account).process
+        rescue => e
+          Rails.logger.error("Failed to process holdings for #{kraken_account.id}: #{e.message}")
+        end
       else
         skipped_count += 1
       end
