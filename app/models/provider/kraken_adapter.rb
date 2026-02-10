@@ -5,9 +5,9 @@ class Provider::KrakenAdapter < Provider::Base
   # Register this adapter with the factory
   Provider::Factory.register("KrakenAccount", self)
 
-  # Kraken supports Investment accounts (single portfolio with multiple holdings)
+  # Kraken supports Crypto accounts (exchange portfolio with crypto holdings)
   def self.supported_account_types
-    %w[Investment]
+    %w[Crypto]
   end
 
   # Returns connection configurations for this provider

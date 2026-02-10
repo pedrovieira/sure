@@ -78,7 +78,7 @@ class KrakenItem::Importer
         currency: "USD", # Trade balance is in the specified asset (default USD)
         cash_balance: trade_balance.dig("result", "mf").to_d || 0, # Free margin
         account_status: "active",
-        account_type: "investment",
+        account_type: "crypto",
         institution_metadata: {
           name: "Kraken",
           domain: "kraken.com",

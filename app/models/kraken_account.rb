@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class KrakenAccount < ApplicationRecord
-  include CurrencyNormalizable, Encryptable
+  include CurrencyNormalizable, Encryptable, KrakenAccount::DataHelpers
 
   # Encrypt raw payloads if ActiveRecord encryption is configured
   if encryption_ready?
@@ -57,7 +57,7 @@ class KrakenAccount < ApplicationRecord
       currency: data[:currency] || "USD",
       cash_balance: parse_decimal(data[:cash_balance]) || 0,
       account_status: data[:account_status] || "active",
-      account_type: data[:account_type] || "investment",
+      account_type: data[:account_type] || "crypto",
       provider: "kraken",
       institution_metadata: data[:institution_metadata],
       raw_payload: portfolio_data
