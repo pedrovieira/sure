@@ -67,10 +67,12 @@ class Provider::Kraken
   end
 
   # Get trade balance (portfolio valuation)
-  # @param asset [String] Base asset for valuation (default: "ZUSD")
+  # @param asset [String] Optional base asset for valuation
   # @return [Hash] Trade balance info
-  def get_trade_balance(asset: "ZUSD")
-    post_private("/0/private/TradeBalance", { asset: asset })
+  def get_trade_balance(asset: nil)
+    params = {}
+    params[:asset] = asset if asset.present?
+    post_private("/0/private/TradeBalance", params)
   end
 
   # Get ticker information for multiple pairs
@@ -191,12 +193,13 @@ class Provider::Kraken
       url = "#{API_BASE_URL}#{path}"
       nonce = generate_nonce
       params_with_nonce = params.merge(nonce: nonce)
+      post_data = params_with_nonce.to_query
 
       with_retries("post_private") do
         response = self.class.post(
           url,
-          body: params_with_nonce.to_query,
-          headers: auth_headers(path, nonce, params_with_nonce)
+          body: post_data,
+          headers: auth_headers(path, nonce, post_data)
         )
 
         handle_response(response)
@@ -205,12 +208,14 @@ class Provider::Kraken
 
     # Generate authentication headers for Kraken API
     # Uses HMAC-SHA512 signature
-    def auth_headers(path, nonce, params)
-      # Create the message: path + SHA256(nonce + POST data)
-      post_data = params.to_query
+    def auth_headers(path, nonce, post_data)
+      # Create the message: nonce + POST data
+      # POST data must be URL-encoded
       message = nonce.to_s + post_data
       sha256_hash = Digest::SHA256.digest(message)
-      hmac_data = path + sha256_hash.unpack1("H*")
+
+      # HMAC data: path (as bytes) + SHA256 hash (as bytes)
+      hmac_data = path.dup.force_encoding("ASCII-8BIT") + sha256_hash
 
       # Decode base64 secret and create HMAC
       decoded_secret = Base64.decode64(@api_secret)
@@ -267,6 +272,7 @@ class Provider::Kraken
       # Check for Kraken API errors
       if parsed["error"]&.any?
         error_msg = parsed["error"].join(", ")
+        Rails.logger.error "Kraken API Error: #{error_msg}"
         handle_kraken_error(error_msg, parsed)
       end
 
@@ -311,6 +317,9 @@ class Provider::Kraken
         raise Error.new("Invalid arguments provided", :invalid_arguments)
       when /EOrder:Rate limit exceeded/
         raise RateLimitError.new("Rate limit exceeded", :rate_limited)
+      else
+        # Unknown Kraken API error - raise generic error
+        raise ApiError.new("Kraken API error: #{error_msg}", :api_error)
       end
     end
 end
