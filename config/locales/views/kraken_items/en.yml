@@ -1,5 +1,24 @@
 ---
 en:
+  # Settings panel - must be at root level for view lookup
+  settings:
+    providers:
+      kraken_panel:
+        setup_instructions: "To connect Kraken:"
+        step1_html: "Go to <a href=\"https://pro.kraken.com/app/settings/api\" target=\"_blank\" class=\"link\">Kraken API settings</a>"
+        step2: "Create a new API key with permissions: Funds permissions > Query & Data > Query ledger entries"
+        step3: "Copy your API key and API secret and paste them below"
+        api_key_label: "API Key"
+        api_key_placeholder: "Enter your Kraken API Key"
+        api_secret_label: "API Secret (Private Key)"
+        api_secret_placeholder: "Enter your Kraken API Secret"
+        connect_button: "Connect Kraken"
+        sync: "Sync"
+        status_connected: "Connected to Kraken"
+        status_not_connected: "Not connected. Enter your API credentials above to get started."
+        syncing: "Syncing..."
+        disconnect_confirm: "Are you sure you want to disconnect your Kraken account?"
+
   kraken_items:
     # Model method strings
     sync_status:
@@ -159,22 +178,3 @@ en:
       missing_parameters: "Missing required parameters"
       no_api_key: "Kraken API key not found. Please configure it in Provider Settings."
       success: "Successfully linked %{account_name} with Kraken"
-
-    # Settings panel
-    settings:
-      providers:
-        kraken_panel:
-          setup_instructions: "Connect your Kraken exchange account to automatically import your crypto portfolio including spot holdings, staked assets, and earn positions."
-          step1_html: "Generate API keys in your <a href=\"https://www.kraken.com/u/security/api\" target=\"_blank\" class=\"link\">Kraken account settings</a> with 'Query' permissions (Funds permissions - Query, Data - Query ledger entries)"
-          step2: "Enter your API Key and API Secret below"
-          step3: "Click Connect to import your portfolio"
-          api_key_label: "API Key"
-          api_key_placeholder: "Your Kraken API Key"
-          api_secret_label: "API Secret (Private Key)"
-          api_secret_placeholder: "Your Kraken API Secret"
-          connect_button: "Connect Kraken"
-          sync: "Sync"
-          status_connected: "Connected to Kraken"
-          status_not_connected: "Not connected"
-          syncing: "Syncing..."
-          disconnect_confirm: "Are you sure you want to disconnect your Kraken account?"
