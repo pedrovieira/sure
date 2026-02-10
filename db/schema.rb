@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_02_03_204605) do
+ActiveRecord::Schema[7.2].define(version: 2026_02_08_230807) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -701,6 +701,53 @@ ActiveRecord::Schema[7.2].define(version: 2026_02_03_204605) do
     t.string "token_digest"
     t.index ["token"], name: "index_invite_codes_on_token", unique: true
     t.index ["token_digest"], name: "index_invite_codes_on_token_digest", unique: true, where: "(token_digest IS NOT NULL)"
+  end
+
+  create_table "kraken_accounts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "kraken_item_id", null: false
+    t.string "name"
+    t.string "kraken_account_id"
+    t.string "account_number"
+    t.string "currency"
+    t.decimal "current_balance", precision: 19, scale: 4
+    t.string "account_status"
+    t.string "account_type"
+    t.string "provider"
+    t.jsonb "institution_metadata"
+    t.jsonb "raw_payload"
+    t.decimal "cash_balance", precision: 19, scale: 4, default: "0.0"
+    t.jsonb "raw_holdings_payload", default: []
+    t.jsonb "raw_ledger_payload", default: []
+    t.datetime "last_holdings_sync"
+    t.datetime "last_ledger_sync"
+    t.boolean "activities_fetch_pending", default: false
+    t.date "sync_start_date"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["kraken_account_id"], name: "index_kraken_accounts_on_kraken_account_id"
+    t.index ["kraken_item_id"], name: "index_kraken_accounts_on_kraken_item_id"
+  end
+
+  create_table "kraken_items", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.string "name"
+    t.string "institution_id"
+    t.string "institution_name"
+    t.string "institution_domain"
+    t.string "institution_url"
+    t.string "institution_color"
+    t.string "status", default: "good"
+    t.boolean "scheduled_for_deletion", default: false
+    t.boolean "pending_account_setup", default: false
+    t.datetime "sync_start_date"
+    t.jsonb "raw_payload"
+    t.jsonb "raw_institution_payload"
+    t.text "api_key"
+    t.text "api_secret"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id"], name: "index_kraken_items_on_family_id"
+    t.index ["status"], name: "index_kraken_items_on_status"
   end
 
   create_table "llm_usages", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -1475,6 +1522,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_02_03_204605) do
   add_foreign_key "imports", "families"
   add_foreign_key "invitations", "families"
   add_foreign_key "invitations", "users", column: "inviter_id"
+  add_foreign_key "kraken_accounts", "kraken_items"
+  add_foreign_key "kraken_items", "families"
   add_foreign_key "llm_usages", "families"
   add_foreign_key "lunchflow_accounts", "lunchflow_items"
   add_foreign_key "lunchflow_items", "families"

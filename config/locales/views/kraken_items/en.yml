@@ -1,0 +1,180 @@
+---
+en:
+  kraken_items:
+    # Model method strings
+    sync_status:
+      no_accounts: "No portfolio found"
+      synced:
+        one: "%{count} portfolio synced"
+        other: "%{count} portfolios synced"
+      synced_with_setup: "%{linked} synced, %{unlinked} need setup"
+    institution_summary:
+      none: "No Kraken connection"
+      count:
+        one: "%{count} Kraken connection"
+        other: "%{count} Kraken connections"
+    errors:
+      provider_not_configured: "Kraken provider is not configured"
+
+    # Syncer status messages
+    sync:
+      status:
+        importing: "Importing portfolio from Kraken..."
+        processing: "Processing holdings and ledger..."
+        calculating: "Calculating balances..."
+        importing_data: "Importing portfolio data..."
+        checking_setup: "Checking portfolio configuration..."
+        needs_setup: "Portfolio needs setup..."
+      success: "Sync started"
+
+    # Panel (settings view)
+    panel:
+      setup_instructions: "Connect your Kraken exchange account to import your crypto portfolio, including spot holdings, staked assets, and earn positions."
+      step1: "Generate API keys in your Kraken account settings with 'Query' permissions"
+      step2: "Enter your API Key and Private Key (API Secret) below"
+      step3: "Click Connect to import your portfolio"
+      save_button: "Connect Kraken"
+      update_button: "Update Credentials"
+      status_configured_html: "Connected to Kraken. Visit the <a href=\"%{accounts_path}\" class=\"link\">Accounts</a> tab to view your portfolio."
+      status_not_configured: "Not connected to Kraken"
+      fields:
+        api_key:
+          label: "API Key"
+          description: "Your Kraken API Key"
+          placeholder_new: "Paste your API Key here"
+          placeholder_update: "Enter new API Key to update"
+        api_secret:
+          label: "API Secret (Private Key)"
+          description: "Your Kraken API Secret"
+          placeholder_new: "Paste your API Secret here"
+          placeholder_update: "Enter new API Secret to update"
+
+    # CRUD success messages
+    create:
+      success: "Kraken connection created successfully"
+    update:
+      success: "Kraken connection updated"
+    destroy:
+      success: "Kraken connection removed"
+    index:
+      title: "Kraken Connections"
+
+    # Loading states
+    loading:
+      loading_message: "Loading Kraken portfolio..."
+      loading_title: "Loading"
+
+    # Provider item display (used in _kraken_item partial)
+    kraken_item:
+      accounts_need_setup: "Portfolio needs setup"
+      delete: "Delete connection"
+      deletion_in_progress: "deletion in progress..."
+      error: "Error"
+      more_accounts_available:
+        one: "%{count} more portfolio available"
+        other: "%{count} more portfolios available"
+      no_accounts_description: "Your Kraken portfolio hasn't been set up yet."
+      no_accounts_title: "No portfolio linked"
+      provider_name: "Kraken"
+      requires_update: "Connection needs update"
+      setup_action: "Set Up Portfolio"
+      setup_description: "Your Kraken portfolio is ready to be linked."
+      setup_needed: "Portfolio ready to set up"
+      status: "Synced %{timestamp} ago"
+      status_never: "Never synced"
+      status_with_summary: "Last synced %{timestamp} ago - %{summary}"
+      syncing: "Syncing..."
+      total: "Total"
+      unlinked: "Unlinked"
+      update_credentials: "Update credentials"
+
+    # Setup accounts wizard
+    setup_accounts:
+      accounts_count:
+        one: "%{count} portfolio available"
+        other: "%{count} portfolios available"
+      all_accounts_linked: "Your Kraken portfolio is already set up."
+      api_error: "API error: %{message}"
+      creating: "Creating portfolio account..."
+      fetch_failed: "Failed to Fetch Portfolio"
+      import_selected: "Import portfolio"
+      instructions: "Your Kraken portfolio is ready to be imported. This will create an Investment account with all your holdings (spot, staked, and earn positions)."
+      no_accounts: "No portfolio found from this Kraken connection."
+      no_accounts_to_setup: "No Portfolio to Set Up"
+      no_api_key: "Kraken API key is not configured. Please check your connection settings."
+      select_all: "Select all"
+      account_types:
+        investment: "Investment Account"
+        skip: "Skip this portfolio"
+      balance: "Balance"
+      cancel: "Cancel"
+      choose_account_type: "Choose how to set up your Kraken portfolio:"
+      create_accounts: "Create Portfolio Account"
+      creating_accounts: "Creating Portfolio Account..."
+      historical_data_range: "Historical Data Range:"
+      subtitle: "Set up your Kraken portfolio as an Investment account"
+      sync_start_date_help: "Select how far back you want to sync transaction history."
+      sync_start_date_label: "Start syncing transactions from:"
+      title: "Set Up Your Kraken Portfolio"
+
+    # Complete account setup
+    complete_account_setup:
+      all_skipped: "Portfolio was skipped. No account was created."
+      creation_failed: "Failed to create portfolio account: %{error}"
+      no_accounts: "No portfolio to set up."
+      success: "Successfully created portfolio account."
+
+    # Select existing account view
+    select_existing_account:
+      account_already_linked: "This account is already linked to a provider"
+      all_accounts_already_linked: "All Kraken portfolios are already linked"
+      api_error: "API error: %{message}"
+      balance_label: "Balance:"
+      cancel: "Cancel"
+      cancel_button: "Cancel"
+      configure_name_in_provider: "Cannot import - please configure portfolio name in Kraken"
+      connect_hint: "Connect a Kraken portfolio to enable automatic syncing."
+      description: "Select a Kraken portfolio to link with this account. Holdings and transactions will be synced automatically."
+      header: "Link with Kraken"
+      link_account: "Link portfolio"
+      link_button: "Link this portfolio"
+      linking_to: "Linking to:"
+      no_account_specified: "No portfolio specified"
+      no_accounts: "No unlinked Kraken portfolios found."
+      no_accounts_found: "No Kraken portfolios found. Please check your API key configuration."
+      no_api_key: "Kraken API key is not configured. Please configure it in Settings."
+      no_credentials_configured: "Please configure your Kraken credentials first in Provider Settings."
+      no_name_placeholder: "(No name)"
+      settings_link: "Go to Provider Settings"
+      subtitle: "Choose a Kraken portfolio"
+      title: "Link %{account_name} with Kraken"
+
+    # Link existing account
+    link_existing_account:
+      account_already_linked: "This account is already linked to a provider"
+      api_error: "API error: %{message}"
+      invalid_account_name: "Cannot link portfolio with blank name"
+      provider_account_already_linked: "This Kraken portfolio is already linked to another account"
+      provider_account_not_found: "Kraken portfolio not found"
+      missing_parameters: "Missing required parameters"
+      no_api_key: "Kraken API key not found. Please configure it in Provider Settings."
+      success: "Successfully linked %{account_name} with Kraken"
+
+    # Settings panel
+    settings:
+      providers:
+        kraken_panel:
+          setup_instructions: "Connect your Kraken exchange account to automatically import your crypto portfolio including spot holdings, staked assets, and earn positions."
+          step1_html: "Generate API keys in your <a href=\"https://www.kraken.com/u/security/api\" target=\"_blank\" class=\"link\">Kraken account settings</a> with 'Query' permissions (Funds permissions - Query, Data - Query ledger entries)"
+          step2: "Enter your API Key and API Secret below"
+          step3: "Click Connect to import your portfolio"
+          api_key_label: "API Key"
+          api_key_placeholder: "Your Kraken API Key"
+          api_secret_label: "API Secret (Private Key)"
+          api_secret_placeholder: "Your Kraken API Secret"
+          connect_button: "Connect Kraken"
+          sync: "Sync"
+          status_connected: "Connected to Kraken"
+          status_not_connected: "Not connected"
+          syncing: "Syncing..."
+          disconnect_confirm: "Are you sure you want to disconnect your Kraken account?"

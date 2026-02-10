@@ -129,7 +129,8 @@ class Settings::ProvidersController < ApplicationController
         config.provider_key.to_s.casecmp("coinstats").zero? || \
         config.provider_key.to_s.casecmp("mercury").zero? || \
         config.provider_key.to_s.casecmp("coinbase").zero? || \
-        config.provider_key.to_s.casecmp("snaptrade").zero?
+        config.provider_key.to_s.casecmp("snaptrade").zero? || \
+        config.provider_key.to_s.casecmp("kraken").zero?
       end
 
       # Providers page only needs to know whether any SimpleFin/Lunchflow connections exist with valid credentials
@@ -140,5 +141,6 @@ class Settings::ProvidersController < ApplicationController
       @mercury_items = Current.family.mercury_items.ordered.select(:id)
       @coinbase_items = Current.family.coinbase_items.ordered # Coinbase panel needs name and sync info for status display
       @snaptrade_items = Current.family.snaptrade_items.includes(:snaptrade_accounts).ordered
+      @kraken_items = Current.family.kraken_items.ordered.select(:id)
     end
 end
