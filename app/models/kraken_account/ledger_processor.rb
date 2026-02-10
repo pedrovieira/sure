@@ -110,125 +110,216 @@ class KrakenAccount::LedgerProcessor
     def process_trade(refid, entries)
       return unless entries.size >= 2
 
-      # Separate buy and sell sides
-      buy_entry = nil
-      sell_entry = nil
+      # Parse all entries
+      parsed_entries = entries.map { |e| parse_entry(e) }
 
-      entries.each do |entry|
-        data = entry.with_indifferent_access
-        amount = data[:amount].to_d
-        if amount > 0
-          buy_entry = data
-        else
-          sell_entry = data
-        end
-      end
+      # Separate positive (received) and negative (spent) amounts
+      received_entries = parsed_entries.select { |e| e[:amount] > 0 }
+      spent_entries = parsed_entries.select { |e| e[:amount] < 0 }
 
-      return unless buy_entry && sell_entry
+      return unless received_entries.any? && spent_entries.any?
 
-      # Get asset info
-      buy_asset = normalize_asset_code(buy_entry[:asset])
-      sell_asset = normalize_asset_code(sell_entry[:asset])
+      # For a buy: received = crypto, spent = fiat/currency
+      # For a sell: received = fiat/currency, spent = crypto
+      # Determine which is which by checking if it's a fiat currency
 
-      buy_qty = buy_entry[:amount].to_d.abs
-      sell_qty = sell_entry[:amount].to_d.abs
+      received_crypto = received_entries.find { |e| !fiat_currency?(e[:asset]) }
+      received_fiat = received_entries.find { |e| fiat_currency?(e[:asset]) }
+      spent_crypto = spent_entries.find { |e| !fiat_currency?(e[:asset]) }
+      spent_fiat = spent_entries.find { |e| fiat_currency?(e[:asset]) }
 
-      # Determine which side is the security being traded
-      # Usually the non-fiat asset is the security
-      if fiat_currency?(sell_asset)
-        # Buying crypto with fiat (e.g., buy BTC with USD)
-        process_buy_trade(refid, buy_entry, sell_entry, buy_asset, buy_qty, sell_qty)
-      elsif fiat_currency?(buy_asset)
-        # Selling crypto for fiat (e.g., sell BTC for USD)
-        process_sell_trade(refid, buy_entry, sell_entry, sell_asset, sell_qty, buy_qty)
+      if received_crypto && spent_fiat
+        # Buy trade: received crypto, spent fiat
+        process_buy_trade(refid, received_crypto, spent_fiat, parsed_entries)
+      elsif spent_crypto && received_fiat
+        # Sell trade: spent crypto, received fiat
+        process_sell_trade(refid, spent_crypto, received_fiat, parsed_entries)
       else
-        # Crypto-to-crypto trade (e.g., trade BTC for ETH)
-        process_crypto_trade(refid, buy_entry, sell_entry)
+        # Crypto-to-crypto trade
+        process_crypto_trade(refid, received_entries, spent_entries)
       end
     end
 
-    def process_buy_trade(refid, buy_entry, sell_entry, ticker, qty, cost_amount)
+    def parse_entry(entry)
+      data = entry.with_indifferent_access
+      {
+        asset: normalize_asset_code(data[:asset]),
+        amount: data[:amount].to_d,
+        fee: data[:fee].to_d,
+        time: data[:time],
+        refid: data[:refid]
+      }
+    end
+
+    # Process a buy trade (received crypto, spent fiat)
+    # Fees can be in either the crypto or fiat (or both)
+    def process_buy_trade(refid, crypto_entry, fiat_entry, all_entries)
+      ticker = crypto_entry[:asset]
       security = resolve_security(ticker)
       return unless security
 
-      price = cost_amount / qty if qty > 0
-      date = parse_timestamp(buy_entry[:time])
-      currency = normalize_asset_code(sell_entry[:asset])
+      # Calculate net amounts
+      # Gross crypto received
+      gross_qty = crypto_entry[:amount].to_d.abs
+      # Fee in crypto (if any)
+      crypto_fee = crypto_entry[:fee].to_d.abs
+      # Net crypto after fee
+      net_qty = gross_qty - crypto_fee
 
-      Rails.logger.info "KrakenAccount::LedgerProcessor - Importing buy trade: #{ticker} qty=#{qty} price=#{price}"
+      # Gross fiat spent (negative amount)
+      gross_cost = fiat_entry[:amount].to_d.abs
+      # Fee in fiat (if any)
+      fiat_fee = fiat_entry[:fee].to_d.abs
+      # Total cost including fee
+      total_cost = gross_cost + fiat_fee
 
+      # Calculate price per unit
+      price = total_cost / net_qty if net_qty > 0
+
+      date = parse_timestamp(crypto_entry[:time])
+      currency = fiat_entry[:asset]
+
+      # Build notes with fee information
+      notes = build_fee_notes(crypto_fee: crypto_fee, crypto_ticker: ticker, fiat_fee: fiat_fee, fiat_ticker: currency)
+
+      Rails.logger.info "KrakenAccount::LedgerProcessor - Importing BUY: #{ticker} qty=#{net_qty} (gross: #{gross_qty}, fee: #{crypto_fee}) cost=#{total_cost} #{currency}"
+
+      # Import the trade
       result = import_adapter.import_trade(
         external_id: "kraken_#{refid}",
         security: security,
-        quantity: qty,
+        quantity: net_qty,
         price: price,
-        amount: -cost_amount, # Negative because money goes out
+        amount: -total_cost, # Negative because money goes out
         currency: currency,
         date: date,
         name: "Buy #{ticker}",
         source: "kraken",
-        activity_label: "Buy"
+        activity_label: "Buy",
+        notes: notes
       )
+
       @trades_count += 1 if result
     end
 
-    def process_sell_trade(refid, buy_entry, sell_entry, ticker, qty, proceeds_amount)
+    # Process a sell trade (spent crypto, received fiat)
+    # Fees can be in either the crypto or fiat (or both)
+    def process_sell_trade(refid, crypto_entry, fiat_entry, all_entries)
+      ticker = crypto_entry[:asset]
       security = resolve_security(ticker)
       return unless security
 
-      price = proceeds_amount / qty if qty > 0
-      date = parse_timestamp(sell_entry[:time])
-      currency = normalize_asset_code(buy_entry[:asset])
+      # Calculate net amounts
+      # Gross crypto sold (negative amount)
+      gross_qty = crypto_entry[:amount].to_d.abs
+      # Fee in crypto (if any)
+      crypto_fee = crypto_entry[:fee].to_d.abs
+      # Net crypto after fee
+      net_qty = gross_qty - crypto_fee
 
-      Rails.logger.info "KrakenAccount::LedgerProcessor - Importing sell trade: #{ticker} qty=#{qty} price=#{price}"
+      # Gross fiat received
+      gross_proceeds = fiat_entry[:amount].to_d.abs
+      # Fee in fiat (if any)
+      fiat_fee = fiat_entry[:fee].to_d.abs
+      # Net proceeds after fee
+      net_proceeds = gross_proceeds - fiat_fee
 
+      # Calculate price per unit
+      price = net_proceeds / gross_qty if gross_qty > 0
+
+      date = parse_timestamp(crypto_entry[:time])
+      currency = fiat_entry[:asset]
+
+      # Build notes with fee information
+      notes = build_fee_notes(crypto_fee: crypto_fee, crypto_ticker: ticker, fiat_fee: fiat_fee, fiat_ticker: currency)
+
+      Rails.logger.info "KrakenAccount::LedgerProcessor - Importing SELL: #{ticker} qty=#{net_qty} (gross: #{gross_qty}, fee: #{crypto_fee}) proceeds=#{net_proceeds} #{currency}"
+
+      # Import the trade
       result = import_adapter.import_trade(
         external_id: "kraken_#{refid}",
         security: security,
-        quantity: -qty, # Negative because we're selling
+        quantity: -net_qty, # Negative because we're selling
         price: price,
-        amount: proceeds_amount,
+        amount: net_proceeds,
         currency: currency,
         date: date,
         name: "Sell #{ticker}",
         source: "kraken",
-        activity_label: "Sell"
+        activity_label: "Sell",
+        notes: notes
       )
+
       @trades_count += 1 if result
     end
 
-    def process_crypto_trade(refid, buy_entry, sell_entry)
+    # Build fee notes string for trades
+    # If fee is in the bought currency, it's already deducted from quantity
+    # If fee is in the spending currency, it's included in the total cost
+    def build_fee_notes(crypto_fee:, crypto_ticker:, fiat_fee:, fiat_ticker:)
+      notes = []
+
+      if crypto_fee > 0
+        notes << "Fee: #{crypto_fee} #{crypto_ticker} deducted from quantity"
+      end
+
+      if fiat_fee > 0
+        notes << "Fee: #{fiat_fee} #{fiat_ticker} included in total"
+      end
+
+      notes.join(". ")
+    end
+
+    def process_crypto_trade(refid, received_entries, spent_entries)
       # Crypto-to-crypto trades are complex - for now, log and skip
-      # This could be implemented as two separate entries in the future
       Rails.logger.info "KrakenAccount::LedgerProcessor - Skipping crypto-to-crypto trade: #{refid}"
     end
 
     # Process staking/earn rewards as income
+    # Single entry (not grouped like trades)
+    # Example: {asset: "ADA.S", amount: "0.12410846", fee: "0.03102711", type: "staking"}
     def process_reward(refid, entry)
-      ticker = normalize_asset_code(entry[:asset])
+      data = entry.with_indifferent_access
+      ticker = normalize_asset_code(data[:asset])
       return if ticker.blank?
 
-      qty = entry[:amount].to_d.abs
-      return if qty.zero?
+      # Parse amounts
+      gross_qty = data[:amount].to_d.abs
+      fee = data[:fee].to_d.abs
+      # Net reward after fee deduction
+      net_qty = gross_qty - fee
+
+      return if net_qty <= 0
 
       security = resolve_security(ticker)
       return unless security
 
-      date = parse_timestamp(entry[:time])
-      reward_type = entry[:type]&.downcase
+      date = parse_timestamp(data[:time])
+      reward_type = data[:type]&.downcase
       label = reward_type == "staking" ? "Staking" : "Dividend"
 
-      Rails.logger.info "KrakenAccount::LedgerProcessor - Importing #{label}: #{ticker} qty=#{qty}"
+      # Build notes with fee information
+      notes = if fee > 0
+        "Gross reward: #{gross_qty} #{ticker}. Fee: #{fee} #{ticker} deducted. Net: #{net_qty} #{ticker}"
+      else
+        nil
+      end
 
-      # Import as a transaction with the security
-      result = import_adapter.import_transaction(
+      Rails.logger.info "KrakenAccount::LedgerProcessor - Importing #{label}: #{ticker} qty=#{net_qty} (gross: #{gross_qty}, fee: #{fee})"
+
+      # Import as a trade with zero cost basis (rewards are income)
+      result = import_adapter.import_trade(
         external_id: "kraken_#{refid}",
-        amount: 0, # Rewards have no cash impact
+        security: security,
+        quantity: net_qty,
+        price: 0, # Rewards have no purchase price
+        amount: 0, # No cash outflow
         currency: account.currency,
         date: date,
         name: "#{label} - #{ticker}",
         source: "kraken",
-        investment_activity_label: label
+        activity_label: label,
+        notes: notes
       )
       @rewards_count += 1 if result
     end
@@ -244,7 +335,7 @@ class KrakenAccount::LedgerProcessor
       date = parse_timestamp(entry[:time])
       label = LEDGER_TYPE_TO_LABEL[entry_type] || entry_type.capitalize
 
-      # Skip internal transfers (they have matching in/out entries)
+      # Skip internal transfers
       if entry_type == "transfer"
         Rails.logger.debug "KrakenAccount::LedgerProcessor - Skipping transfer entry: #{refid}"
         return

@@ -546,8 +546,9 @@ class Account::ProviderImportAdapter
   # @param external_id [String, nil] Provider's unique ID (optional, for deduplication)
   # @param source [String] Provider name
   # @param activity_label [String, nil] Investment activity label (e.g., "Buy", "Sell", "Reinvestment")
+  # @param notes [String, nil] Optional transaction notes (e.g., fee information)
   # @return [Entry] The created entry with trade
-  def import_trade(security:, quantity:, price:, amount:, currency:, date:, name: nil, external_id: nil, source:, activity_label: nil)
+  def import_trade(security:, quantity:, price:, amount:, currency:, date:, name: nil, external_id: nil, source:, activity_label: nil, notes: nil)
     raise ArgumentError, "security is required" if security.nil?
     raise ArgumentError, "source is required" if source.blank?
 
@@ -594,6 +595,13 @@ class Account::ProviderImportAdapter
         currency: currency,
         name: trade_name
       )
+
+      # Add notes if provided
+      if notes.present?
+        entry.assign_attributes(notes: notes)
+      elsif entry.respond_to?(:notes) && entry.persisted? && notes.present?
+        entry.enrich_attribute(:notes, notes, source: source)
+      end
 
       entry.save!
       entry
