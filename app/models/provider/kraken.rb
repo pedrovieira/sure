@@ -83,13 +83,39 @@ class Provider::Kraken
     post_public("/0/public/Ticker", { pair: pair_string })
   end
 
+  # Hardcoded fallback mapping for common Kraken assets
+  # Ensures consistent normalization even if API fails
+  STANDARD_ASSET_MAP = {
+    "XXBT" => "BTC",
+    "XBT" => "BTC",
+    "XETH" => "ETH",
+    "ETH" => "ETH",
+    "ZUSD" => "USD",
+    "USD" => "USD",
+    "ZEUR" => "EUR",
+    "EUR" => "EUR",
+    "ZGBP" => "GBP",
+    "GBP" => "GBP",
+    "ZCAD" => "CAD",
+    "CAD" => "CAD",
+    "ZJPY" => "JPY",
+    "JPY" => "JPY",
+    "ZCHF" => "CHF",
+    "CHF" => "CHF",
+    "ZAUD" => "AUD",
+    "AUD" => "AUD"
+  }.freeze
+
   # Asset info mapping with caching
   # Maps Kraken asset codes to standard tickers
   # @return [Hash] { "XXBT" => "BTC", "ZUSD" => "USD", ... }
   def asset_info_map
     Rails.cache.fetch("kraken_asset_info", expires_in: ASSET_INFO_CACHE_TTL) do
       response = get_asset_info
-      build_asset_mapping(response)
+      api_mapping = build_asset_mapping(response)
+
+      # Merge with hardcoded fallback to ensure common assets are always mapped
+      STANDARD_ASSET_MAP.merge(api_mapping)
     end
   end
 
@@ -99,15 +125,22 @@ class Provider::Kraken
   # @return [Array<String, String>] [normalized_ticker, extension]
   #   e.g., normalize_asset_code("XXBT.S") => ["BTC", "S"]
   def normalize_asset_code(kraken_code)
+    return [ nil, nil ] if kraken_code.blank?
+
     # Separate base code from extension (.S, .F, .M, .B)
     base_code = kraken_code.to_s.gsub(/\.[SMFBT]$/, "")
     extension = kraken_code.to_s.match(/\.([SMFBT])$/)&.[](1)
 
-    # Map to standard ticker using cached asset info
-    mapping = asset_info_map
-    normalized = mapping[base_code]
+    # Try standard hardcoded mapping first (most reliable)
+    normalized = STANDARD_ASSET_MAP[base_code]
 
-    # Fallback: strip X/Z prefix if no mapping found
+    # Fallback to cached asset info from API
+    if normalized.nil?
+      mapping = asset_info_map
+      normalized = mapping[base_code]
+    end
+
+    # Final fallback: strip X/Z prefix
     if normalized.nil?
       normalized = base_code.gsub(/^[XZ]/, "")
     end

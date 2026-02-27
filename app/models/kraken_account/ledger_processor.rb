@@ -6,9 +6,10 @@ class KrakenAccount::LedgerProcessor
   include KrakenAccount::DataHelpers
 
   # Map Kraken ledger types to Sure activity labels
+  # Note: Must use valid Transaction::ACTIVITY_LABELS values for investment_activity_label
   LEDGER_TYPE_TO_LABEL = {
     "trade" => "Trade",
-    "deposit" => "Deposit",
+    "deposit" => "Contribution",  # Deposits into investment account are contributions
     "withdrawal" => "Withdrawal",
     "transfer" => "Transfer",
     "staking" => "Staking",
@@ -25,7 +26,7 @@ class KrakenAccount::LedgerProcessor
   TRADE_TYPES = %w[trade].freeze
 
   # Ledger types that are staking/earn rewards (income)
-  REWARD_TYPES = %w[staking dividend].freeze
+  REWARD_TYPES = %w[staking dividend reward].freeze
 
   # Ledger types that are cash movements
   CASH_TYPES = %w[deposit withdrawal transfer].freeze
@@ -296,7 +297,13 @@ class KrakenAccount::LedgerProcessor
 
       date = parse_timestamp(data[:time])
       reward_type = data[:type]&.downcase
-      label = reward_type == "staking" ? "Staking" : "Dividend"
+      # Map reward types to valid activity labels
+      label = case reward_type
+      when "staking" then "Interest"  # Staking rewards are interest-like income
+      when "dividend" then "Dividend"
+      when "reward" then "Interest"   # Generic rewards treated as interest
+      else "Interest"
+      end
 
       # Build notes with fee information
       notes = if fee > 0
@@ -307,13 +314,15 @@ class KrakenAccount::LedgerProcessor
 
       Rails.logger.info "KrakenAccount::LedgerProcessor - Importing #{label}: #{ticker} qty=#{net_qty} (gross: #{gross_qty}, fee: #{fee})"
 
-      # Import as a trade with zero cost basis (rewards are income)
+      # Rewards increase crypto holdings - import as a Trade with zero cost basis
+      # Use tiny negative amount so UI shows as "Buy" not "Sell" (negative = outflow = Buy)
+      # Amount column has scale 4, so -0.0001 is the smallest non-zero value
       result = import_adapter.import_trade(
         external_id: "kraken_#{refid}",
         security: security,
         quantity: net_qty,
-        price: 0, # Rewards have no purchase price
-        amount: 0, # No cash outflow
+        price: 0, # Rewards have no purchase price (zero cost basis)
+        amount: -0.0001, # Tiny negative so UI shows as "Buy" (receiving crypto)
         currency: account.currency,
         date: date,
         name: "#{label} - #{ticker}",
@@ -335,17 +344,28 @@ class KrakenAccount::LedgerProcessor
       date = parse_timestamp(entry[:time])
       label = LEDGER_TYPE_TO_LABEL[entry_type] || entry_type.capitalize
 
-      # Skip internal transfers
+      # Skip internal transfers between spot and staking (same account)
+      # These are just movements within Kraken, not real cash in/out
       if entry_type == "transfer"
-        Rails.logger.debug "KrakenAccount::LedgerProcessor - Skipping transfer entry: #{refid}"
-        return
+        subtype = entry[:subtype]&.downcase
+        if %w[spottostaking stakingtospot].include?(subtype)
+          Rails.logger.debug "KrakenAccount::LedgerProcessor - Skipping internal transfer: #{refid} (#{subtype})"
+          return
+        end
+        # Other transfers might be real movements, process them
       end
 
-      Rails.logger.info "KrakenAccount::LedgerProcessor - Importing #{label}: #{ticker} amount=#{amount}"
+      # Invert sign to match Sure's convention:
+      # - Negative = inflow (money INTO account)
+      # - Positive = outflow (money OUT of account)
+      # Kraken uses opposite: deposits positive, withdrawals negative
+      sure_amount = -amount
+
+      Rails.logger.info "KrakenAccount::LedgerProcessor - Importing #{label}: #{ticker} amount=#{amount} -> sure_amount=#{sure_amount}"
 
       result = import_adapter.import_transaction(
         external_id: "kraken_#{refid}",
-        amount: amount,
+        amount: sure_amount,
         currency: ticker,
         date: date,
         name: "#{label} - #{ticker}",

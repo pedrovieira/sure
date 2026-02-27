@@ -240,7 +240,7 @@ class KrakenItemsController < ApplicationController
         name: kraken_account.name,
         balance: kraken_account.current_balance || 0,
         currency: kraken_account.currency || "USD",
-        accountable: Crypto.new
+        accountable: Crypto.new(subtype: "Crypto Exchange")
       )
 
       if account.persisted?
@@ -288,12 +288,18 @@ class KrakenItemsController < ApplicationController
 
     def link_kraken_account(kraken_account, accountable_type)
       accountable_class = validated_accountable_class(accountable_type)
+      accountable_attrs = {}
+
+      # Set subtype for Crypto accounts
+      if accountable_class == Crypto
+        accountable_attrs[:subtype] = "Crypto Exchange"
+      end
 
       account = Current.family.accounts.create!(
         name: kraken_account.name,
         balance: kraken_account.current_balance || 0,
         currency: kraken_account.currency || "USD",
-        accountable: accountable_class.new
+        accountable: accountable_class.new(accountable_attrs)
       )
 
       kraken_account.ensure_account_provider!(account)
@@ -304,8 +310,10 @@ class KrakenItemsController < ApplicationController
       accountable_class = validated_accountable_class(accountable_type)
       accountable_attrs = {}
 
-      # Set subtype if the accountable supports it
-      if config[:subtype].present? && accountable_class.respond_to?(:subtypes)
+      # Set subtype for Crypto accounts (default to "Crypto Exchange")
+      if accountable_class == Crypto
+        accountable_attrs[:subtype] = config[:subtype].presence || "Crypto Exchange"
+      elsif config[:subtype].present? && accountable_class.respond_to?(:subtypes)
         accountable_attrs[:subtype] = config[:subtype]
       end
 

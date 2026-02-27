@@ -183,9 +183,11 @@ class KrakenItem::Importer
         ledgers = response.dig("result", "ledger") || {}
         break if ledgers.empty?
 
-        # Convert to array with refid as key
-        ledgers.each do |refid, ledger_data|
-          all_ledgers << ledger_data.merge("refid" => refid)
+        # Convert to array preserving internal refid (trade reference)
+        # The hash key is the ledger entry ID, but the internal refid field
+        # is what groups related entries (e.g., both sides of a trade)
+        ledgers.each do |ledger_id, ledger_data|
+          all_ledgers << ledger_data.merge("ledger_id" => ledger_id)
         end
 
         # Check if we've reached the end
