@@ -130,6 +130,7 @@ class Settings::ProvidersController < ApplicationController
         config.provider_key.to_s.casecmp("mercury").zero? || \
         config.provider_key.to_s.casecmp("coinbase").zero? || \
         config.provider_key.to_s.casecmp("snaptrade").zero? || \
+        config.provider_key.to_s.casecmp("indexa_capital").zero?  || \
         config.provider_key.to_s.casecmp("kraken").zero?
       end
 
@@ -141,6 +142,7 @@ class Settings::ProvidersController < ApplicationController
       @mercury_items = Current.family.mercury_items.ordered.select(:id)
       @coinbase_items = Current.family.coinbase_items.ordered # Coinbase panel needs name and sync info for status display
       @snaptrade_items = Current.family.snaptrade_items.includes(:snaptrade_accounts).ordered
+      @indexa_capital_items = Current.family.indexa_capital_items.ordered.select(:id)
       @kraken_items = Current.family.kraken_items.ordered
     end
 end

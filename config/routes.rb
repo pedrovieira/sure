@@ -18,6 +18,22 @@ Rails.application.routes.draw do
     end
   end
 
+  resources :indexa_capital_items, only: [ :index, :new, :create, :show, :edit, :update, :destroy ] do
+    collection do
+      get :preload_accounts
+      get :select_accounts
+      post :link_accounts
+      get :select_existing_account
+      post :link_existing_account
+    end
+
+    member do
+      post :sync
+      get :setup_accounts
+      post :complete_account_setup
+    end
+  end
+
   resources :mercury_items, only: %i[index new create show edit update destroy] do
     collection do
       get :preload_accounts
@@ -373,6 +389,7 @@ Rails.application.routes.draw do
       post "auth/login", to: "auth#login"
       post "auth/refresh", to: "auth#refresh"
       post "auth/sso_exchange", to: "auth#sso_exchange"
+      patch "auth/enable_ai", to: "auth#enable_ai"
 
       # Production API endpoints
       resources :accounts, only: [ :index, :show ]
@@ -381,6 +398,8 @@ Rails.application.routes.draw do
       resources :tags, only: %i[index show create update destroy]
 
       resources :transactions, only: [ :index, :show, :create, :update, :destroy ]
+      resources :trades, only: [ :index, :show, :create, :update, :destroy ]
+      resources :holdings, only: [ :index, :show ]
       resources :valuations, only: [ :create, :update, :show ]
       resources :imports, only: [ :index, :show, :create ]
       resource :usage, only: [ :show ], controller: :usage
@@ -391,6 +410,9 @@ Rails.application.routes.draw do
           post :retry, on: :collection
         end
       end
+
+      delete "users/reset", to: "users#reset"
+      delete "users/me", to: "users#destroy"
 
       # Test routes for API controller testing (only available in test environment)
       if Rails.env.test?
@@ -467,6 +489,9 @@ Rails.application.routes.draw do
 
   get "redis-configuration-error", to: "pages#redis_configuration_error"
 
+  # MCP server endpoint for external AI assistants (JSON-RPC 2.0)
+  post "mcp", to: "mcp#handle"
+
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
@@ -481,6 +506,7 @@ Rails.application.routes.draw do
   terms_url = ENV["LEGAL_TERMS_URL"].presence
   get "privacy", to: privacy_url ? redirect(privacy_url) : "pages#privacy"
   get "terms", to: terms_url ? redirect(terms_url) : "pages#terms"
+  get "intro", to: "pages#intro"
 
   # Admin namespace for super admin functionality
   namespace :admin do
