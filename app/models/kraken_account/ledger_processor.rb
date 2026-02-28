@@ -299,9 +299,9 @@ class KrakenAccount::LedgerProcessor
       reward_type = data[:type]&.downcase
       # Map reward types to valid activity labels
       label = case reward_type
-      when "staking" then "Interest"  # Staking rewards are interest-like income
+      when "staking" then "Staking"
       when "dividend" then "Dividend"
-      when "reward" then "Interest"   # Generic rewards treated as interest
+      when "reward" then "Interest"
       else "Interest"
       end
 
@@ -314,20 +314,16 @@ class KrakenAccount::LedgerProcessor
 
       Rails.logger.info "KrakenAccount::LedgerProcessor - Importing #{label}: #{ticker} qty=#{net_qty} (gross: #{gross_qty}, fee: #{fee})"
 
-      # Rewards increase crypto holdings - import as a Trade with zero cost basis
-      # Use tiny negative amount so UI shows as "Buy" not "Sell" (negative = outflow = Buy)
-      # Amount column has scale 4, so -0.0001 is the smallest non-zero value
-      result = import_adapter.import_trade(
+      # Rewards increase crypto holdings - import as a Transaction with zero amount (no cash impact)
+      # The holdings processor will update the crypto quantity separately
+      result = import_adapter.import_transaction(
         external_id: "kraken_#{refid}",
-        security: security,
-        quantity: net_qty,
-        price: 0, # Rewards have no purchase price (zero cost basis)
-        amount: -0.0001, # Tiny negative so UI shows as "Buy" (receiving crypto)
+        amount: 0, # No cash impact - holdings updated separately
         currency: account.currency,
         date: date,
-        name: "#{label} - #{ticker}",
+        name: "#{label} - #{net_qty} #{ticker}",
         source: "kraken",
-        activity_label: label,
+        investment_activity_label: label,
         notes: notes
       )
       @rewards_count += 1 if result
@@ -355,6 +351,11 @@ class KrakenAccount::LedgerProcessor
         # Other transfers might be real movements, process them
       end
 
+      # Determine the currency for the transaction
+      # For fiat deposits/withdrawals (USD, EUR, etc.), use the fiat currency
+      # For crypto transfers, use the crypto ticker
+      currency = fiat_currency?(ticker) ? account.currency : ticker
+
       # Invert sign to match Sure's convention:
       # - Negative = inflow (money INTO account)
       # - Positive = outflow (money OUT of account)
@@ -366,7 +367,7 @@ class KrakenAccount::LedgerProcessor
       result = import_adapter.import_transaction(
         external_id: "kraken_#{refid}",
         amount: sure_amount,
-        currency: ticker,
+        currency: currency,
         date: date,
         name: "#{label} - #{ticker}",
         source: "kraken",

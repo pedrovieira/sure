@@ -38,7 +38,12 @@ class Holding < ApplicationRecord
     return nil unless amount
     return 0 if amount.zero?
 
-    account.balance.zero? ? 1 : amount / account.balance * 100
+    # Calculate weight based on sum of all holdings for this account on the same date
+    # This ensures weights add up to 100%
+    total_holdings_value = account.holdings.where(date: date).sum(:amount)
+    return 0 if total_holdings_value.zero?
+
+    amount / total_holdings_value * 100
   end
 
   # Returns average cost per share, or nil if unknown.

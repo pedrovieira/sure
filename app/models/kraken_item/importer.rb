@@ -10,6 +10,9 @@ class KrakenItem::Importer
   LEDGER_CHUNK_SIZE = 50
   MAX_LEDGER_CHUNKS = 100 # Safety limit
 
+  # Known fiat currencies for cash calculation
+  FIAT_CURRENCIES = %w[USD EUR GBP JPY CAD AUD CHF].freeze
+
   attr_reader :kraken_item, :kraken_provider, :sync
 
   def initialize(kraken_item, kraken_provider:, sync: nil)
@@ -68,15 +71,21 @@ class KrakenItem::Importer
         kraken_account_id: "kraken-portfolio"
       )
 
-      # Calculate total portfolio value
-      total_value = trade_balance.dig("result", "eb") || 0
+      # Get the equity balance (total value including P&L)
+      total_value = trade_balance.dig("result", "eb") || trade_balance.dig("result", "tb") || 0
+
+      # Calculate cash balance from fiat holdings only
+      # For crypto-only accounts, cash is essentially 0
+      extended_balance = kraken_provider.get_extended_balance
+      stats["api_requests"] = stats.fetch("api_requests", 0) + 1
+      fiat_cash = calculate_fiat_cash_from_balance(extended_balance)
 
       kraken_account.upsert_from_kraken!({
         account_id: "kraken-portfolio",
         name: "Kraken Portfolio",
         current_balance: total_value.to_d,
-        currency: "USD", # Trade balance is in the specified asset (default USD)
-        cash_balance: trade_balance.dig("result", "mf").to_d || 0, # Free margin
+        currency: "USD",
+        cash_balance: fiat_cash,
         account_status: "active",
         account_type: "crypto",
         institution_metadata: {
@@ -211,6 +220,40 @@ class KrakenItem::Importer
     rescue => e
       Rails.logger.error "KrakenItem::Importer - Failed to import ledger: #{e.message}"
       register_error(e, context: "ledger_import")
+    end
+
+    def calculate_fiat_cash_from_balance(balance_response)
+      return 0 unless balance_response.is_a?(Hash) && balance_response["result"].is_a?(Hash)
+
+      total_cash = 0
+
+      balance_response["result"].each do |asset_code, balance_data|
+        balance = balance_data.is_a?(Hash) ? balance_data["balance"] : balance_data
+        next if balance.to_d.zero?
+
+        # Check if this is a fiat currency (ZEUR, ZUSD, etc.)
+        normalized = asset_code.gsub(/^Z/, "").gsub(/\..*/, "")
+
+        next unless FIAT_CURRENCIES.include?(normalized)
+
+        # Convert to USD (simplified - would need real exchange rates)
+        case normalized
+        when "EUR"
+          total_cash += balance.to_d * 1.05
+        when "GBP"
+          total_cash += balance.to_d * 1.27
+        when "JPY"
+          total_cash += balance.to_d / 150
+        when "CAD"
+          total_cash += balance.to_d * 0.70
+        when "AUD"
+          total_cash += balance.to_d * 0.62
+        else
+          total_cash += balance.to_d
+        end
+      end
+
+      total_cash
     end
 
     def calculate_ledger_start_time(kraken_account)

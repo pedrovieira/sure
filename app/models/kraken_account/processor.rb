@@ -70,21 +70,16 @@ class KrakenAccount::Processor
     end
 
     def calculate_total_balance
-      # Calculate total from holdings + cash for accuracy
-      holdings_value = calculate_holdings_value
-      cash_value = kraken_account.cash_balance || 0
-
-      calculated_total = holdings_value + cash_value
-
-      # Use calculated total if we have holdings, otherwise trust API value
-      if holdings_value > 0
-        Rails.logger.info "KrakenAccount::Processor - Using calculated total: holdings=#{holdings_value} + cash=#{cash_value} = #{calculated_total}"
-        calculated_total
-      elsif kraken_account.current_balance.present?
-        Rails.logger.info "KrakenAccount::Processor - Using API total: #{kraken_account.current_balance}"
+      # For Kraken, use the API's equity balance (eb) directly
+      # This already includes all holdings + cash in the account
+      if kraken_account.current_balance.present?
+        Rails.logger.info "KrakenAccount::Processor - Using Kraken equity balance: #{kraken_account.current_balance}"
         kraken_account.current_balance
       else
-        calculated_total
+        # Fallback to holdings + cash calculation
+        holdings_value = calculate_holdings_value
+        cash_value = kraken_account.cash_balance || 0
+        holdings_value + cash_value
       end
     end
 

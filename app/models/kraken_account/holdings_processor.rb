@@ -15,16 +15,20 @@ class KrakenAccount::HoldingsProcessor
     holdings_data = @kraken_account.raw_holdings_payload
     return if holdings_data.blank?
 
-    Rails.logger.info "KrakenAccount::HoldingsProcessor - Processing #{holdings_data.size} holdings for account #{@kraken_account.id}"
+    Rails.logger.info "KrakenAccount::HoldingsProcessor - Processing #{holdings_data.size} raw holdings for account #{@kraken_account.id}"
+
+    # Aggregate holdings by ticker (sum all types: spot + staked + bonds)
+    aggregated = aggregate_holdings_by_ticker(holdings_data)
+    Rails.logger.info "KrakenAccount::HoldingsProcessor - Aggregated to #{aggregated.size} unique tickers"
 
     # Get provider for price lookups
     provider = kraken_item&.kraken_provider
 
-    holdings_data.each_with_index do |holding_data, idx|
+    aggregated.each do |ticker, data|
       begin
-        process_holding(holding_data.with_indifferent_access, provider)
+        process_aggregated_holding(ticker, data, provider)
       rescue => e
-        Rails.logger.error "KrakenAccount::HoldingsProcessor - Failed to process holding #{idx + 1}: #{e.class} - #{e.message}"
+        Rails.logger.error "KrakenAccount::HoldingsProcessor - Failed to process #{ticker}: #{e.class} - #{e.message}"
         Rails.logger.error e.backtrace.first(5).join("\n") if e.backtrace
       end
     end
@@ -32,9 +36,35 @@ class KrakenAccount::HoldingsProcessor
 
   private
 
+    # Aggregate holdings by ticker - sum quantities for spot + staked + bonds
+    def aggregate_holdings_by_ticker(holdings_data)
+      aggregated = {}
+
+      holdings_data.each do |data|
+        # Handle both string and symbol keys
+        data = data.with_indifferent_access if data.respond_to?(:with_indifferent_access)
+
+        ticker = data[:ticker]
+        next if ticker.blank?
+
+        # Skip fiat currencies
+        next if %w[USD EUR GBP JPY CAD AUD].include?(ticker)
+
+        # Convert to BigDecimal
+        quantity = data[:quantity].to_s.to_d
+        next if quantity.zero?
+
+        aggregated[ticker] ||= { quantity: BigDecimal("0"), types: [] }
+        aggregated[ticker][:quantity] += quantity
+        aggregated[ticker][:types] << data[:type]
+      end
+
+      aggregated
+    end
+
     def kraken_item
       @kraken_account.kraken_item
-    end
+      end
 
     def account
       @kraken_account.current_account
@@ -52,24 +82,20 @@ class KrakenAccount::HoldingsProcessor
       quantity = data[:quantity].to_d
       return if quantity.zero?
 
-      # Create unique ticker based on holding type
-      # e.g., BTC for spot, BTC.S for staked
-      ticker_with_type = holding_type == "Spot" ? ticker : "#{ticker}.#{holding_type.first}"
+      # Skip fiat currencies - they're tracked as cash balance
+      return if %w[USD EUR GBP JPY CAD AUD].include?(ticker)
 
-      Rails.logger.info "KrakenAccount::HoldingsProcessor - Processing #{holding_type} holding: #{ticker_with_type} qty=#{quantity}"
-
-      # Resolve or create the security
-      security = resolve_security(ticker_with_type, data, holding_type)
+      # Resolve or create the security using base ticker (without extension)
+      # The holding_type is stored in the holding's extra metadata
+      security = resolve_security(ticker, data, holding_type)
       return unless security
 
       # Get current price for valuation
-      price = fetch_current_price(ticker, provider)
+      price = fetch_current_price(ticker, provider) || 0
       amount = price > 0 ? (quantity * price).round(2) : 0
 
       # Get account currency
       currency = account.currency || "USD"
-
-      Rails.logger.info "KrakenAccount::HoldingsProcessor - Importing holding: #{ticker_with_type} qty=#{quantity} price=#{price} amount=#{amount}"
 
       # Import the holding
       holding = import_adapter.import_holding(
@@ -90,6 +116,47 @@ class KrakenAccount::HoldingsProcessor
           "asset_code" => data[:kraken_asset_code],
           "holding_type" => holding_type,
           "raw_balance" => data[:raw_data]
+        }
+        holding.save!
+      end
+    end
+
+    # Process an aggregated holding (sum of spot + staked + bonds)
+    def process_aggregated_holding(ticker, data, provider)
+      quantity = data[:quantity]
+      return if quantity.zero?
+
+      Rails.logger.info "KrakenAccount::HoldingsProcessor - Processing aggregated: #{ticker} qty=#{quantity}"
+
+      # Resolve security
+      security = resolve_security(ticker, {}, "Spot")
+      return unless security
+
+      # Get current price
+      price = fetch_current_price(ticker, provider) || 0
+      amount = price > 0 ? (quantity * price).round(2) : 0
+
+      # Get account currency
+      currency = account.currency || "USD"
+
+      # Import the holding
+      holding = import_adapter.import_holding(
+        security: security,
+        quantity: quantity,
+        amount: amount,
+        currency: currency,
+        date: Date.current,
+        price: price,
+        account_provider_id: @kraken_account.account_provider&.id,
+        source: "kraken",
+        delete_future_holdings: false
+      )
+
+      # Store metadata
+      if holding.respond_to?(:extra) && holding.extra.is_a?(Hash)
+        holding.extra["kraken"] = {
+          "holding_types" => data[:types],
+          "aggregated" => true
         }
         holding.save!
       end
@@ -138,14 +205,27 @@ class KrakenAccount::HoldingsProcessor
       # Try to get price from Kraken's ticker API
       if provider
         begin
-          pair = "X#{ticker}ZUSD"
-          ticker_data = provider.get_ticker_information([ pair ])
-
-          if ticker_data.dig("result", pair, "c").present?
-            # Last trade price is in 'c' array, first element
-            price = ticker_data.dig("result", pair, "c", 0)
-            return price.to_d if price.present?
+          # Build the correct Kraken pair
+          # Kraken uses specific formats: XXBT (BTC), XETH (ETH), etc.
+          kraken_base = case ticker
+          when "BTC" then "XXBT"
+          when "ETH" then "XETH"
+          when "XRP" then "XXRP"
+          when "LTC" then "XLTC"
+          when "XLM" then "XXLM"
+          when "DOT" then "XDOT"
+          else "X#{ticker}"
           end
+
+          # Try USD first, then USDT
+          price = fetch_price_for_pair(provider, "#{kraken_base}ZUSD")
+          return price if price
+
+          price = fetch_price_for_pair(provider, "#{kraken_base}ZUSDT")
+          return price if price
+
+          price = fetch_price_for_pair(provider, "#{kraken_base}ZEUR")
+          return price if price
         rescue => e
           Rails.logger.warn "KrakenAccount::HoldingsProcessor - Failed to fetch price from Kraken: #{e.message}"
         end
@@ -155,11 +235,27 @@ class KrakenAccount::HoldingsProcessor
       security = Security.find_by(ticker: "CRYPTO:#{ticker}")
       if security
         latest_price = security.prices.order(date: :desc).first
-        return latest_price.price if latest_price.present?
+        if latest_price.present? && latest_price.price > 0
+          Rails.logger.info "KrakenAccount::HoldingsProcessor - Using stored price for #{ticker}: #{latest_price.price}"
+          return latest_price.price
+        end
       end
 
-      # If no price available, return 0
+      # If no price available, return nil (matches Coinbase behavior)
       Rails.logger.warn "KrakenAccount::HoldingsProcessor - No price available for #{ticker}"
-      0
+      nil
+    end
+
+    def fetch_price_for_pair(provider, pair)
+      ticker_data = provider.get_ticker_information([ pair ])
+      price = ticker_data.dig("result", pair, "c", 0)
+      if price.present? && price.to_d > 0
+        Rails.logger.info "KrakenAccount::HoldingsProcessor - Fetched price for #{pair}: #{price}"
+        return price.to_d
+      end
+      nil
+    rescue => e
+      Rails.logger.debug "KrakenAccount::HoldingsProcessor - Pair #{pair} not available: #{e.message}"
+      nil
     end
 end
