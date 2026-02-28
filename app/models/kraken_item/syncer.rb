@@ -60,7 +60,23 @@ class KrakenItem::Syncer
   private
 
     def count_holdings
-      kraken_item.linked_kraken_accounts.sum { |pa| Array(pa.raw_holdings_payload).size }
+      kraken_item.linked_kraken_accounts.sum do |pa|
+        count_unique_tickers(Array(pa.raw_holdings_payload))
+      end
+    end
+
+    def count_unique_tickers(holdings_data)
+      aggregated = {}
+      holdings_data.each do |data|
+        data = data.with_indifferent_access if data.respond_to?(:with_indifferent_access)
+        ticker = data[:ticker]
+        next if ticker.blank?
+        next if %w[USD EUR GBP JPY CAD AUD].include?(ticker)
+        quantity = data[:quantity].to_s.to_d
+        next if quantity.zero?
+        aggregated[ticker] = true
+      end
+      aggregated.keys.size
     end
 
     def mark_import_started(sync)
