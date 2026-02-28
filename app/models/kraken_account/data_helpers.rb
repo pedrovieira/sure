@@ -153,4 +153,45 @@ module KrakenAccount::DataHelpers
         fallback
       end
     end
+
+    # Fetch current price for a crypto ticker from Kraken
+    def fetch_price_for_ticker(ticker, provider)
+      return nil unless provider && ticker.present?
+
+      # Normalize ticker (remove CRYPTO: prefix if present, and .S suffix for staking)
+      kraken_ticker = ticker.gsub("CRYPTO:", "").gsub(".S", "")
+
+      # Kraken uses specific formats: XBTC (BTC), XETH (ETH), XADA, etc.
+      kraken_base = case kraken_ticker
+      when "BTC" then "XXBT"
+      when "ETH" then "XETH"
+      when "XRP" then "XXRP"
+      when "LTC" then "XLTC"
+      when "XLM" then "XXLM"
+      when "DOT" then "XDOT"
+      else "X#{kraken_ticker}"
+      end
+
+      # Try USD, then USDT, then EUR
+      %w[ZUSD ZUSDT ZEUR].each do |quote|
+        pair = "#{kraken_base}#{quote}"
+        begin
+          ticker_data = provider.ticker(pair: pair)
+          ticker_hash = sdk_object_to_hash(ticker_data)
+          price = ticker_hash.dig("result", pair, "c", 0)
+          if price.present? && price.to_d > 0
+            Rails.logger.info "KrakenAccount::DataHelpers - Fetched price for #{pair}: #{price}"
+            return price.to_d
+          end
+        rescue => e
+          Rails.logger.debug "KrakenAccount::DataHelpers - Failed to fetch price for #{pair}: #{e.message}"
+        end
+      end
+
+      Rails.logger.warn "KrakenAccount::DataHelpers - No price found for #{ticker} (#{kraken_base})"
+      nil
+    rescue => e
+      Rails.logger.warn "KrakenAccount::DataHelpers - Price fetch error for #{ticker}: #{e.message}"
+      nil
+    end
 end

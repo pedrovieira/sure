@@ -12,8 +12,8 @@ class KrakenAccount::LedgerProcessor
     "deposit" => "Contribution",  # Deposits into investment account are contributions
     "withdrawal" => "Withdrawal",
     "transfer" => "Transfer",
-    "staking" => "Staking",
-    "reward" => "Reward",
+    "staking" => "Interest",
+    "reward" => "Interest",
     "dividend" => "Dividend",
     "margin" => "Margin",
     "rollover" => "Rollover",
@@ -299,10 +299,18 @@ class KrakenAccount::LedgerProcessor
       reward_type = data[:type]&.downcase
       # Map reward types to valid activity labels
       label = case reward_type
-      when "staking" then "Staking"
+      when "staking" then "Interest"
       when "dividend" then "Dividend"
       when "reward" then "Interest"
       else "Interest"
+      end
+
+      # Fetch current price to calculate USD value for income classification
+      price = fetch_price_for_ticker(ticker, kraken_provider)
+      income_amount = if price && price > 0
+        -(net_qty * price).round(2) # Negative = income
+      else
+        -1 # Fallback: use symbolic -1 to mark as income (won't affect balances)
       end
 
       # Build notes with fee information
@@ -314,11 +322,11 @@ class KrakenAccount::LedgerProcessor
 
       Rails.logger.info "KrakenAccount::LedgerProcessor - Importing #{label}: #{ticker} qty=#{net_qty} (gross: #{gross_qty}, fee: #{fee})"
 
-      # Rewards increase crypto holdings - import as a Transaction with zero amount (no cash impact)
+      # Rewards increase crypto holdings - use negative amount to mark as income
       # The holdings processor will update the crypto quantity separately
       result = import_adapter.import_transaction(
         external_id: "kraken_#{refid}",
-        amount: 0, # No cash impact - holdings updated separately
+        amount: income_amount,
         currency: account.currency,
         date: date,
         name: "#{label} - #{net_qty} #{ticker}",

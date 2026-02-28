@@ -263,11 +263,12 @@ class KrakenItem::Importer
       end
 
       # For incremental sync, go back 7 days from last sync
-      if kraken_account.last_ledger_sync.present?
+      # Only if we've already done an initial sync (have existing ledger entries)
+      if kraken_account.last_ledger_sync.present? && kraken_account.raw_ledger_payload.to_a.any?
         return (kraken_account.last_ledger_sync - 7.days).to_i
       end
 
-      # Default: fetch last 90 days for initial sync
+      # Default: fetch last 90 days for initial sync (no existing entries yet)
       90.days.ago.to_i
     end
 
